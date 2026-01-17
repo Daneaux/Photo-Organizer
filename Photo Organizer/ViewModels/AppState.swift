@@ -138,6 +138,9 @@ final class AppState {
         return false
     }
 
+    // Cancellation flag for scanning
+    private var scanCancelled = false
+
     var totalFilesCount: Int {
         scannedFiles.count
     }
@@ -176,10 +179,20 @@ final class AppState {
 
     // MARK: - Scanning
 
+    func cancelScan() async {
+        scanCancelled = true
+        await scanner.cancel()
+        // Reset to setup state, keeping directories
+        workflowState = .setup
+        scanProgress = DirectoryScanner.ScanProgress()
+        scannedFiles = []
+    }
+
     func startScan() async {
         guard let source = sourceDirectory else { return }
 
         workflowState = .scanning
+        scanCancelled = false
         scanProgress = DirectoryScanner.ScanProgress()
         scannedFiles = []
 
@@ -198,11 +211,34 @@ final class AppState {
                 }
             }
 
-            // Process each discovered file
-            for discovered in discoveredFiles {
+            // Check if cancelled after directory scan
+            if scanCancelled { return }
+
+            // Update progress for metadata extraction phase
+            scanProgress.phase = .extractingMetadata
+            scanProgress.totalFilesToProcess = discoveredFiles.count
+            scanProgress.filesProcessed = 0
+
+            // Process each discovered file with progress reporting
+            for (index, discovered) in discoveredFiles.enumerated() {
+                // Check for cancellation
+                if scanCancelled { return }
+
+                scanProgress.filesProcessed = index
+                scanProgress.currentFile = discovered.url.lastPathComponent
+                scanProgress.lastUpdateTime = Date()
+
                 let mediaFile = await processDiscoveredFile(discovered)
                 scannedFiles.append(mediaFile)
+
+                // Update progress after processing
+                scanProgress.filesProcessed = index + 1
             }
+
+            // Check if cancelled after processing
+            if scanCancelled { return }
+
+            scanProgress.filesProcessed = discoveredFiles.count
 
             // Group files needing date confirmation by directory
             groupFilesNeedingDateConfirmation()
@@ -215,8 +251,13 @@ final class AppState {
                 prepareEventConfirmation()
             }
 
+        } catch DirectoryScanner.ScanError.cancelled {
+            // Scan was cancelled, just return (state already reset by cancelScan)
+            return
         } catch {
-            workflowState = .error("Scan failed: \(error.localizedDescription)")
+            if !scanCancelled {
+                workflowState = .error("Scan failed: \(error.localizedDescription)")
+            }
         }
     }
 

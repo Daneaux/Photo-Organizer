@@ -4,9 +4,26 @@ actor DirectoryScanner {
     // MARK: - Progress Reporting
 
     struct ScanProgress: Sendable {
+        enum Phase: Sendable {
+            case discovering
+            case extractingMetadata
+        }
+
+        var phase: Phase = .discovering
         var directoriesScanned: Int = 0
         var filesFound: Int = 0
         var currentDirectory: String = ""
+        var currentDirectoryPath: String = ""
+
+        // Metadata extraction phase
+        var filesProcessed: Int = 0
+        var totalFilesToProcess: Int = 0
+        var currentFile: String = ""
+        var lastUpdateTime: Date = Date()
+
+        // Error tracking
+        var skippedFiles: Int = 0
+        var errorMessages: [String] = []
     }
 
     // MARK: - Discovered File
@@ -69,6 +86,8 @@ actor DirectoryScanner {
             if resourceValues.isDirectory == true {
                 progress.directoriesScanned += 1
                 progress.currentDirectory = fileURL.lastPathComponent
+                progress.currentDirectoryPath = fileURL.path
+                progress.lastUpdateTime = Date()
 
                 // Report progress periodically
                 if Date().timeIntervalSince(lastProgressUpdate) >= progressUpdateInterval {

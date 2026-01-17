@@ -114,6 +114,7 @@ struct SetupView: View {
 
 struct ScanningView: View {
     @Bindable var appState: AppState
+    @State private var showCancelConfirmation = false
 
     var body: some View {
         VStack(spacing: 24) {
@@ -125,9 +126,31 @@ struct ScanningView: View {
             Text("Please wait while scanning your photos...")
                 .foregroundStyle(.secondary)
 
+            Button(role: .cancel) {
+                showCancelConfirmation = true
+            } label: {
+                Label("Cancel", systemImage: "xmark.circle")
+            }
+            .buttonStyle(.bordered)
+            .foregroundStyle(.secondary)
+
             Spacer()
         }
         .padding()
+        .confirmationDialog(
+            "Cancel Scanning?",
+            isPresented: $showCancelConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel Scan", role: .destructive) {
+                Task {
+                    await appState.cancelScan()
+                }
+            }
+            Button("Continue Scanning", role: .cancel) {}
+        } message: {
+            Text("All progress will be lost and you'll return to the main screen.")
+        }
     }
 }
 
