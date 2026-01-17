@@ -5,12 +5,63 @@ import SwiftData
 @MainActor
 @Observable
 final class AppState {
+    // MARK: - UserDefaults Keys
+
+    private enum UserDefaultsKeys {
+        static let destinationBookmark = "lastDestinationBookmark"
+    }
+
     // MARK: - Directory Selection
 
     var sourceDirectory: URL?
     var sourceBookmark: Data?
     var destinationDirectory: URL?
     var destinationBookmark: Data?
+
+    // MARK: - Initialization
+
+    init() {
+        // Restore last destination directory from saved bookmark
+        loadSavedDestination()
+    }
+
+    private func loadSavedDestination() {
+        guard let bookmarkData = UserDefaults.standard.data(forKey: UserDefaultsKeys.destinationBookmark) else {
+            return
+        }
+
+        do {
+            let result = try SecurityScopedAccess.resolveBookmark(bookmarkData)
+
+            // If bookmark is stale, try to refresh it
+            if result.isStale {
+                // Need to access the resource to refresh
+                if result.url.startAccessingSecurityScopedResource() {
+                    defer { result.url.stopAccessingSecurityScopedResource() }
+
+                    // Create new bookmark
+                    let newBookmark = try SecurityScopedAccess.createBookmark(for: result.url)
+                    UserDefaults.standard.set(newBookmark, forKey: UserDefaultsKeys.destinationBookmark)
+                    destinationBookmark = newBookmark
+                } else {
+                    // Can't refresh, clear the saved bookmark
+                    UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.destinationBookmark)
+                    return
+                }
+            } else {
+                destinationBookmark = bookmarkData
+            }
+
+            destinationDirectory = result.url
+        } catch {
+            // Invalid bookmark, clear it
+            UserDefaults.standard.removeObject(forKey: UserDefaultsKeys.destinationBookmark)
+        }
+    }
+
+    private func saveDestinationBookmark(_ bookmark: Data) {
+        UserDefaults.standard.set(bookmark, forKey: UserDefaultsKeys.destinationBookmark)
+    }
 
     // MARK: - Workflow State
 
@@ -118,6 +169,8 @@ final class AppState {
         ) {
             destinationDirectory = result.url
             destinationBookmark = result.bookmark
+            // Save for future sessions
+            saveDestinationBookmark(result.bookmark)
         }
     }
 
@@ -501,8 +554,8 @@ final class AppState {
     func reset() {
         sourceDirectory = nil
         sourceBookmark = nil
-        destinationDirectory = nil
-        destinationBookmark = nil
+        // Keep destination directory - restore from saved bookmark
+        loadSavedDestination()
         workflowState = .setup
         scanProgress = DirectoryScanner.ScanProgress()
         scannedFiles = []
