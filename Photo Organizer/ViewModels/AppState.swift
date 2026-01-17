@@ -353,17 +353,31 @@ final class AppState {
         let processableFiles = scannedFiles.filter { $0.processingStatus != .skipped && $0.detectedDate != nil }
         let grouped = Dictionary(grouping: processableFiles) { $0.sourceDirectoryPath }
 
-        directoriesNeedingEventConfirmation = grouped.map { path, files in
+        // Separate directories with suggested events from those without
+        var directoriesWithEvents: [DirectoryEventGroup] = []
+
+        for (path, files) in grouped {
             let dirName = URL(fileURLWithPath: path).lastPathComponent
             let suggestedEvent = eventParser.extractEventDescription(from: dirName)
 
-            return DirectoryEventGroup(
-                directoryPath: path,
-                directoryName: dirName,
-                files: files,
-                suggestedEvent: suggestedEvent
-            )
-        }.sorted { $0.directoryName < $1.directoryName }
+            if let event = suggestedEvent, !event.isEmpty {
+                // Has a suggested event - needs user confirmation
+                directoriesWithEvents.append(DirectoryEventGroup(
+                    directoryPath: path,
+                    directoryName: dirName,
+                    files: files,
+                    suggestedEvent: event
+                ))
+            } else {
+                // No suggested event - auto-accept with nil event description
+                for file in files {
+                    file.eventDescription = nil
+                    file.eventConfirmed = true
+                }
+            }
+        }
+
+        directoriesNeedingEventConfirmation = directoriesWithEvents.sorted { $0.directoryName < $1.directoryName }
 
         if !directoriesNeedingEventConfirmation.isEmpty {
             currentEventConfirmationIndex = 0
@@ -400,6 +414,13 @@ final class AppState {
             Task {
                 await generatePreview()
             }
+        }
+    }
+
+    /// Called when all event confirmations are completed at once from the table UI
+    func finishEventConfirmation() {
+        Task {
+            await generatePreview()
         }
     }
 
