@@ -11,6 +11,9 @@ struct MainView: View {
             case .setup:
                 SetupView(appState: appState)
 
+            case .folderSelection:
+                FolderSelectionView(appState: appState)
+
             case .scanning:
                 ScanningView(appState: appState)
 
@@ -87,10 +90,10 @@ struct SetupView: View {
             // Action Button
             Button {
                 Task {
-                    await appState.startScan()
+                    await appState.enumerateFolders()
                 }
             } label: {
-                Label("Scan for Photos", systemImage: "magnifyingglass")
+                Label("Select Folders", systemImage: "folder.badge.plus")
                     .frame(minWidth: 200)
             }
             .buttonStyle(.borderedProminent)

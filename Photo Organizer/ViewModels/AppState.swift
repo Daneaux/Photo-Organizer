@@ -67,6 +67,7 @@ final class AppState {
 
     enum WorkflowState: Equatable {
         case setup
+        case folderSelection
         case scanning
         case dateConfirmation
         case eventConfirmation
@@ -78,6 +79,19 @@ final class AppState {
     }
 
     var workflowState: WorkflowState = .setup
+
+    // MARK: - Folder Selection State
+
+    var folderHierarchy: FolderNode?
+    var selectedFolderPaths: Set<String> = []
+    var folderEnumerationProgress = FolderEnumerationProgress()
+
+    struct FolderEnumerationProgress: Equatable {
+        var foldersScanned: Int = 0
+        var totalMediaFiles: Int = 0
+        var currentFolder: String = ""
+        var isComplete: Bool = false
+    }
 
     // MARK: - Scanning State
 
@@ -177,6 +191,121 @@ final class AppState {
         }
     }
 
+    // MARK: - Folder Selection
+
+    /// Enumerate folders quickly to build the folder tree (no metadata extraction)
+    func enumerateFolders() async {
+        guard let source = sourceDirectory else { return }
+
+        workflowState = .folderSelection
+        folderEnumerationProgress = FolderEnumerationProgress()
+        folderHierarchy = nil
+        selectedFolderPaths = []
+
+        do {
+            guard source.startAccessingSecurityScopedResource() else {
+                workflowState = .error("Cannot access source directory. Please select it again.")
+                return
+            }
+            defer { source.stopAccessingSecurityScopedResource() }
+
+            // Build folder tree with file counts
+            folderHierarchy = try await buildFolderTree(rootURL: source)
+            folderHierarchy?.calculateRecursiveCount()
+            folderEnumerationProgress.isComplete = true
+
+        } catch {
+            workflowState = .error("Failed to enumerate folders: \(error.localizedDescription)")
+        }
+    }
+
+    private func buildFolderTree(rootURL: URL) async throws -> FolderNode {
+        let fileManager = FileManager.default
+        let rootNode = FolderNode(url: rootURL, name: rootURL.lastPathComponent, depth: 0)
+
+        // Dictionary to track nodes by path for quick parent lookup
+        var nodesByPath: [String: FolderNode] = [rootURL.path: rootNode]
+
+        let resourceKeys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey]
+
+        guard let enumerator = fileManager.enumerator(
+            at: rootURL,
+            includingPropertiesForKeys: Array(resourceKeys),
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            throw DirectoryScanner.ScanError.failedToEnumerate(rootURL.path)
+        }
+
+        for case let fileURL as URL in enumerator {
+            guard let resourceValues = try? fileURL.resourceValues(forKeys: resourceKeys) else {
+                continue
+            }
+
+            let parentPath = fileURL.deletingLastPathComponent().path
+
+            if resourceValues.isDirectory == true {
+                // Create folder node
+                let parentNode = nodesByPath[parentPath] ?? rootNode
+                let depth = parentNode.depth + 1
+                let node = FolderNode(url: fileURL, name: fileURL.lastPathComponent, depth: depth, parent: parentNode)
+
+                parentNode.children.append(node)
+                nodesByPath[fileURL.path] = node
+
+                folderEnumerationProgress.foldersScanned += 1
+                folderEnumerationProgress.currentFolder = fileURL.lastPathComponent
+
+            } else {
+                // Count media file
+                let ext = fileURL.pathExtension.lowercased()
+                if FileExtensions.isSupported(ext) {
+                    if let parentNode = nodesByPath[parentPath] {
+                        parentNode.directFileCount += 1
+                    } else {
+                        rootNode.directFileCount += 1
+                    }
+                    folderEnumerationProgress.totalMediaFiles += 1
+                }
+            }
+        }
+
+        // Sort children alphabetically at each level
+        func sortChildren(_ node: FolderNode) {
+            node.children.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            node.children.forEach { sortChildren($0) }
+        }
+        sortChildren(rootNode)
+
+        return rootNode
+    }
+
+    /// Called after folder selection to proceed to scanning
+    func proceedToScan() async {
+        // Collect selected folder paths
+        guard let root = folderHierarchy else { return }
+        selectedFolderPaths = root.allSelectedPaths()
+
+        // Include root if it has direct files and is selected
+        if root.isSelected && root.directFileCount > 0 {
+            selectedFolderPaths.insert(root.url.path)
+        }
+
+        if selectedFolderPaths.isEmpty {
+            workflowState = .error("No folders selected. Please select at least one folder to process.")
+            return
+        }
+
+        await startScan()
+    }
+
+    /// Navigate back from folder selection to setup
+    func backToSetup() {
+        folderHierarchy = nil
+        selectedFolderPaths = []
+        folderEnumerationProgress = FolderEnumerationProgress()
+        workflowState = .setup
+    }
+
     // MARK: - Scanning
 
     func cancelScan() async {
@@ -204,8 +333,12 @@ final class AppState {
             }
             defer { source.stopAccessingSecurityScopedResource() }
 
-            // Scan directory
-            let discoveredFiles = try await scanner.scan(directory: source) { [weak self] progress in
+            // Scan directory (filter by selected folders if any)
+            let pathFilter = selectedFolderPaths.isEmpty ? nil : selectedFolderPaths
+            let discoveredFiles = try await scanner.scan(
+                directory: source,
+                includedPaths: pathFilter
+            ) { [weak self] progress in
                 Task { @MainActor in
                     self?.scanProgress = progress
                 }
@@ -619,6 +752,11 @@ final class AppState {
         // Keep destination directory - restore from saved bookmark
         loadSavedDestination()
         workflowState = .setup
+        // Folder selection state
+        folderHierarchy = nil
+        selectedFolderPaths = []
+        folderEnumerationProgress = FolderEnumerationProgress()
+        // Scanning state
         scanProgress = DirectoryScanner.ScanProgress()
         scannedFiles = []
         directoriesNeedingDateConfirmation = []

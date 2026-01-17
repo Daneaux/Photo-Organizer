@@ -46,6 +46,7 @@ actor DirectoryScanner {
 
     func scan(
         directory: URL,
+        includedPaths: Set<String>? = nil,
         progressHandler: @escaping @Sendable (ScanProgress) -> Void
     ) async throws -> [DiscoveredFile] {
         isCancelled = false
@@ -105,13 +106,20 @@ actor DirectoryScanner {
 
             // Create discovered file
             let parentURL = fileURL.deletingLastPathComponent()
+            let parentPath = parentURL.path
+
+            // Filter by included paths if specified
+            if let includedPaths = includedPaths, !includedPaths.contains(parentPath) {
+                continue
+            }
+
             let fileSize = Int64(resourceValues.fileSize ?? 0)
 
             let discovered = DiscoveredFile(
                 url: fileURL,
                 mediaType: mediaType,
                 parentDirectoryName: parentURL.lastPathComponent,
-                parentDirectoryPath: parentURL.path,
+                parentDirectoryPath: parentPath,
                 fileSizeBytes: fileSize
             )
 
