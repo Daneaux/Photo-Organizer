@@ -66,9 +66,6 @@ struct EventConfirmationView: View {
 
                             TextField("e.g., Beach Vacation, Birthday Party", text: $eventDescription)
                                 .textFieldStyle(.roundedBorder)
-                                .onAppear {
-                                    eventDescription = group.suggestedEvent ?? ""
-                                }
 
                             if group.suggestedEvent != nil {
                                 HStack {
@@ -111,6 +108,14 @@ struct EventConfirmationView: View {
                 }
                 .padding()
             }
+        }
+        .onAppear {
+            // Initialize with current group's suggested event
+            eventDescription = currentGroup?.suggestedEvent ?? ""
+        }
+        .onChange(of: appState.currentEventConfirmationIndex) { _, _ in
+            // Update description when moving to next directory
+            eventDescription = currentGroup?.suggestedEvent ?? ""
         }
     }
 }

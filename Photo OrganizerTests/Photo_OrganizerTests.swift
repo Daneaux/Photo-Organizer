@@ -432,3 +432,211 @@ final class FileExtensionsTests: XCTestCase {
         XCTAssertTrue(videoDisplay.contains("mp4"), "Video display should contain mp4")
     }
 }
+
+// MARK: - EventDescriptionParser Tests
+
+final class EventDescriptionParserTests: XCTestCase {
+
+    var parser: EventDescriptionParser!
+
+    override func setUpWithError() throws {
+        parser = EventDescriptionParser()
+    }
+
+    override func tearDownWithError() throws {
+        parser = nil
+    }
+
+    // MARK: - ISO Date Format Tests (YYYY-MM-DD)
+
+    func testExtractDescriptionFromISODateWithEvent() {
+        // "2024-06-15 Beach Vacation" -> "Beach Vacation"
+        let result = parser.extractEventDescription(from: "2024-06-15 Beach Vacation")
+        XCTAssertEqual(result, "Beach Vacation", "Should extract 'Beach Vacation' from ISO date format")
+    }
+
+    func testExtractDescriptionFromISODateWithDashSeparator() {
+        // "2024-06-15-Birthday Party" -> "Birthday Party"
+        let result = parser.extractEventDescription(from: "2024-06-15-Birthday Party")
+        XCTAssertEqual(result, "Birthday Party", "Should extract 'Birthday Party' with dash separator")
+    }
+
+    func testExtractDescriptionFromISODateWithUnderscores() {
+        // "2024-06-15_Family_Reunion" -> "Family Reunion"
+        let result = parser.extractEventDescription(from: "2024-06-15_Family_Reunion")
+        XCTAssertEqual(result, "Family Reunion", "Should convert underscores to spaces")
+    }
+
+    func testExtractDescriptionFromISODateOnly() {
+        // "2024-06-15" -> nil (no description)
+        let result = parser.extractEventDescription(from: "2024-06-15")
+        XCTAssertNil(result, "Should return nil for date-only directory name")
+    }
+
+    // MARK: - Year-Month Format Tests (YYYY-MM)
+
+    func testExtractDescriptionFromYearMonthWithEvent() {
+        // "2024-06 Summer Trip" -> "Summer Trip"
+        let result = parser.extractEventDescription(from: "2024-06 Summer Trip")
+        XCTAssertEqual(result, "Summer Trip", "Should extract description from year-month format")
+    }
+
+    func testExtractDescriptionFromYearMonthOnly() {
+        // "2024-06" -> nil
+        let result = parser.extractEventDescription(from: "2024-06")
+        XCTAssertNil(result, "Should return nil for year-month only")
+    }
+
+    // MARK: - Compact Date Format Tests (YYYYMMDD)
+
+    func testExtractDescriptionFromCompactDateWithEvent() {
+        // "20240615 Graduation" -> "Graduation"
+        let result = parser.extractEventDescription(from: "20240615 Graduation")
+        XCTAssertEqual(result, "Graduation", "Should extract description from compact date format")
+    }
+
+    func testExtractDescriptionFromCompactDateOnly() {
+        // "20240615" -> nil
+        let result = parser.extractEventDescription(from: "20240615")
+        XCTAssertNil(result, "Should return nil for compact date only")
+    }
+
+    // MARK: - US Date Format Tests (MM-DD-YYYY)
+
+    func testExtractDescriptionFromUSDateWithEvent() {
+        // "06-15-2024 Wedding" -> "Wedding"
+        let result = parser.extractEventDescription(from: "06-15-2024 Wedding")
+        XCTAssertEqual(result, "Wedding", "Should extract description from US date format")
+    }
+
+    func testExtractDescriptionFromUSDateSlashFormat() {
+        // "06/15/2024 Concert" -> "Concert"
+        let result = parser.extractEventDescription(from: "06/15/2024 Concert")
+        XCTAssertEqual(result, "Concert", "Should extract description from US date with slashes")
+    }
+
+    func testExtractDescriptionFromEuropeanDateFormat() {
+        // "15.06.2024 Holiday" -> "Holiday"
+        let result = parser.extractEventDescription(from: "15.06.2024 Holiday")
+        XCTAssertEqual(result, "Holiday", "Should extract description from European date format")
+    }
+
+    // MARK: - Event Description at Start Tests
+
+    func testExtractDescriptionBeforeDate() {
+        // "Beach Trip 2024-06-15" -> "Beach Trip"
+        let result = parser.extractEventDescription(from: "Beach Trip 2024-06-15")
+        XCTAssertEqual(result, "Beach Trip", "Should extract description that appears before the date")
+    }
+
+    func testExtractDescriptionSurroundingDate() {
+        // "Summer 2024-06-15 Vacation" -> "Summer Vacation"
+        let result = parser.extractEventDescription(from: "Summer 2024-06-15 Vacation")
+        XCTAssertEqual(result, "Summer Vacation", "Should combine description parts around the date")
+    }
+
+    // MARK: - Complex Event Description Tests
+
+    func testExtractMultiWordDescription() {
+        // "2024-06-15 John and Jane Wedding Reception" -> "John and Jane Wedding Reception"
+        let result = parser.extractEventDescription(from: "2024-06-15 John and Jane Wedding Reception")
+        XCTAssertEqual(result, "John and Jane Wedding Reception", "Should preserve multi-word descriptions")
+    }
+
+    func testExtractDescriptionWithNumbers() {
+        // "2024-06-15 25th Anniversary" -> "25th Anniversary"
+        let result = parser.extractEventDescription(from: "2024-06-15 25th Anniversary")
+        XCTAssertEqual(result, "25th Anniversary", "Should preserve numbers in descriptions")
+    }
+
+    func testExtractDescriptionWithMixedSeparators() {
+        // "2024-06-15_Road_Trip-Day1" -> "Road Trip Day1"
+        let result = parser.extractEventDescription(from: "2024-06-15_Road_Trip-Day1")
+        XCTAssertNotNil(result, "Should handle mixed separators")
+        XCTAssertTrue(result?.contains("Road") == true, "Should contain 'Road'")
+        XCTAssertTrue(result?.contains("Trip") == true, "Should contain 'Trip'")
+    }
+
+    // MARK: - Edge Cases
+
+    func testExtractDescriptionFromEmptyString() {
+        let result = parser.extractEventDescription(from: "")
+        XCTAssertNil(result, "Should return nil for empty string")
+    }
+
+    func testExtractDescriptionFromWhitespaceOnly() {
+        let result = parser.extractEventDescription(from: "   ")
+        XCTAssertNil(result, "Should return nil for whitespace-only string")
+    }
+
+    func testExtractDescriptionFromDescriptionOnly() {
+        // "Beach Vacation" -> "Beach Vacation" (no date to remove)
+        let result = parser.extractEventDescription(from: "Beach Vacation")
+        XCTAssertEqual(result, "Beach Vacation", "Should return description when no date present")
+    }
+
+    func testExtractDescriptionTrimsWhitespace() {
+        // "2024-06-15   Beach Vacation   " -> "Beach Vacation"
+        let result = parser.extractEventDescription(from: "2024-06-15   Beach Vacation   ")
+        XCTAssertEqual(result, "Beach Vacation", "Should trim leading/trailing whitespace")
+    }
+
+    func testExtractDescriptionCollapsesMultipleSpaces() {
+        // "2024-06-15 Beach    Vacation" -> "Beach Vacation"
+        let result = parser.extractEventDescription(from: "2024-06-15 Beach    Vacation")
+        XCTAssertEqual(result, "Beach Vacation", "Should collapse multiple spaces")
+    }
+
+    // MARK: - Real-World Directory Name Tests
+
+    func testRealWorldDirectoryNames() {
+        let testCases: [(input: String, expected: String?)] = [
+            ("2023-12-25 Christmas Morning", "Christmas Morning"),
+            ("2024-01-01_New_Years_Party", "New Years Party"),
+            ("20240704 Fourth of July BBQ", "Fourth of July BBQ"),
+            ("Hawaii Trip 2024-03", "Hawaii Trip"),
+            ("2024-07-15", nil),
+            ("Photos", "Photos"),
+            ("2024-08-20-Sarahs-Birthday", "Sarahs-Birthday"),
+            ("Thanksgiving 11-28-2024", "Thanksgiving"),
+            ("2024-09 Fall Colors", "Fall Colors"),
+            ("NYC_2024-05-10_Weekend", "NYC Weekend"),
+        ]
+
+        for (input, expected) in testCases {
+            let result = parser.extractEventDescription(from: input)
+            XCTAssertEqual(result, expected, "For '\(input)': expected '\(expected ?? "nil")' but got '\(result ?? "nil")'")
+        }
+    }
+
+    // MARK: - Batch Processing Tests
+
+    func testSuggestEventDescriptions() {
+        let directoryNames = [
+            "2024-06-15 Beach Trip",
+            "2024-07-04 Fourth of July",
+            "2024-12-25"  // No description
+        ]
+
+        let suggestions = parser.suggestEventDescriptions(from: directoryNames)
+
+        XCTAssertEqual(suggestions["2024-06-15 Beach Trip"], "Beach Trip")
+        XCTAssertEqual(suggestions["2024-07-04 Fourth of July"], "Fourth of July")
+        XCTAssertNil(suggestions["2024-12-25"], "Should not have suggestion for date-only")
+    }
+
+    func testGroupByEventDescription() {
+        let directoryNames = [
+            "2024-06-15 Vacation",
+            "2024-06-16 Vacation",
+            "2024-07-04 BBQ",
+            "2024-12-25"  // No description
+        ]
+
+        let groups = parser.groupByEventDescription(directoryNames)
+
+        XCTAssertEqual(groups["Vacation"]?.count, 2, "Should group two Vacation directories")
+        XCTAssertEqual(groups["BBQ"]?.count, 1, "Should have one BBQ directory")
+        XCTAssertEqual(groups[nil]?.count, 1, "Should have one directory with no description")
+    }
+}
