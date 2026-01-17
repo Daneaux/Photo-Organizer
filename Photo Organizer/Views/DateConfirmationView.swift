@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct DateConfirmationView: View {
     @Bindable var appState: AppState
@@ -43,6 +44,23 @@ struct DateConfirmationView: View {
                         Text("\(group.fileCount) files")
                             .foregroundStyle(.secondary)
                     }
+
+                    // Clickable directory path
+                    Button(action: {
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: group.directoryPath)
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "folder.badge.gearshape")
+                                .font(.caption)
+                            Text(group.directoryPath)
+                                .font(.caption)
+                                .lineLimit(2)
+                                .truncationMode(.middle)
+                        }
+                        .foregroundStyle(.blue)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Click to open in Finder")
 
                     // Sample files
                     VStack(alignment: .leading, spacing: 4) {

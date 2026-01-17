@@ -258,6 +258,59 @@ final class MetadataExtractorTests: XCTestCase {
         // Should be reasonably fast (less than 500ms per extraction)
         XCTAssertLessThan(avgTime, 0.5, "JPEG extraction should be fast")
     }
+
+    // MARK: - Video Date Extraction Tests
+
+    /// 140_4028.AVI should have date: August 20, 2003 (or Aug 21 in UTC)
+    func testExtractDateFromAVI() async throws {
+        let aviURL = samplePhotosURL.appendingPathComponent("140_4028.AVI")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: aviURL.path), "140_4028.AVI should exist")
+
+        let result = await extractor.extractVideoDate(from: aviURL)
+
+        XCTAssertNotNil(result, "Should extract date from AVI video file")
+
+        if let extractedDate = result {
+            // The date should be August 2003
+            let calendar = Calendar.current
+            let year = calendar.component(.year, from: extractedDate.date)
+            let month = calendar.component(.month, from: extractedDate.date)
+
+            XCTAssertEqual(year, 2003, "140_4028.AVI year should be 2003")
+            XCTAssertEqual(month, 8, "140_4028.AVI month should be August (8)")
+            // Day might be 20 or 21 depending on timezone, so we check the range
+            let day = calendar.component(.day, from: extractedDate.date)
+            XCTAssertTrue(day >= 20 && day <= 21, "140_4028.AVI day should be 20 or 21, got \(day)")
+        }
+    }
+
+    func testCombinedExtractionForVideo() async throws {
+        let aviURL = samplePhotosURL.appendingPathComponent("140_4028.AVI")
+
+        guard FileManager.default.fileExists(atPath: aviURL.path) else {
+            throw XCTSkip("140_4028.AVI not found")
+        }
+
+        let result = await extractor.extractDate(from: aviURL, mediaType: .video)
+
+        XCTAssertNotNil(result, "Combined extraction should return a date for AVI video")
+
+        if let extractedDate = result {
+            // Should get a video creation date, not just file modification date
+            XCTAssertEqual(
+                extractedDate.source, .videoCreationDate,
+                "Should extract video creation date, got: \(extractedDate.source)"
+            )
+
+            // Verify it's August 2003
+            let calendar = Calendar.current
+            let year = calendar.component(.year, from: extractedDate.date)
+            let month = calendar.component(.month, from: extractedDate.date)
+
+            XCTAssertEqual(year, 2003, "Year should be 2003")
+            XCTAssertEqual(month, 8, "Month should be August (8)")
+        }
+    }
 }
 
 // MARK: - DateFormatters Tests

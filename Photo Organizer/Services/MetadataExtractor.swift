@@ -191,6 +191,12 @@ actor MetadataExtractor {
             // Metadata extraction failed
         }
 
+        // Fallback: Try mdls (Spotlight metadata) for older video formats like AVI
+        // that AVFoundation may not fully support
+        if let date = extractDateUsingMdls(from: url) {
+            return ExtractedDate(date: date.date, source: .videoCreationDate)
+        }
+
         return nil
     }
 
