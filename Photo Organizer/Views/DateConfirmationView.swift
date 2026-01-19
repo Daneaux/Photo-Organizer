@@ -3,7 +3,45 @@ import AppKit
 
 struct DateConfirmationView: View {
     @Bindable var appState: AppState
-    @State private var selectedDate = Date()
+    @State private var selectedYear: Int = Calendar.current.component(.year, from: Date())
+    @State private var selectedMonth: Int = Calendar.current.component(.month, from: Date())
+    @State private var selectedDay: Int = Calendar.current.component(.day, from: Date())
+
+    private var selectedDate: Date {
+        var components = DateComponents()
+        components.year = selectedYear
+        components.month = selectedMonth
+        components.day = selectedDay
+        return Calendar.current.date(from: components) ?? Date()
+    }
+
+    private var availableYears: [Int] {
+        let currentYear = Calendar.current.component(.year, from: Date())
+        return Array((1990...currentYear).reversed())
+    }
+
+    private var availableMonths: [(Int, String)] {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM"
+        return (1...12).map { month in
+            var components = DateComponents()
+            components.month = month
+            components.day = 1
+            let date = Calendar.current.date(from: components) ?? Date()
+            return (month, formatter.string(from: date))
+        }
+    }
+
+    private var availableDays: [Int] {
+        var components = DateComponents()
+        components.year = selectedYear
+        components.month = selectedMonth
+        if let date = Calendar.current.date(from: components),
+           let range = Calendar.current.range(of: .day, in: .month, for: date) {
+            return Array(range)
+        }
+        return Array(1...31)
+    }
 
     var currentGroup: DirectoryDateGroup? {
         guard appState.currentDateConfirmationIndex < appState.directoriesNeedingDateConfirmation.count else {
@@ -95,18 +133,83 @@ struct DateConfirmationView: View {
                     Text("Select the date for these files:")
                         .font(.headline)
 
-                    DatePicker(
-                        "Date",
-                        selection: $selectedDate,
-                        displayedComponents: .date
-                    )
-                    .datePickerStyle(.graphical)
-                    .frame(maxWidth: 300)
-                    .onAppear {
-                        if let suggested = group.suggestedDate {
-                            selectedDate = suggested
+                    HStack(spacing: 16) {
+                        // Year picker
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Year")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Picker("Year", selection: $selectedYear) {
+                                ForEach(availableYears, id: \.self) { year in
+                                    Text(String(year)).tag(year)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 100)
+                        }
+
+                        // Month picker
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Month")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Picker("Month", selection: $selectedMonth) {
+                                ForEach(availableMonths, id: \.0) { month, name in
+                                    Text(name).tag(month)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 120)
+                        }
+
+                        // Day picker
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Day")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Picker("Day", selection: $selectedDay) {
+                                ForEach(availableDays, id: \.self) { day in
+                                    Text(String(day)).tag(day)
+                                }
+                            }
+                            .labelsHidden()
+                            .frame(width: 80)
                         }
                     }
+                    .onAppear {
+                        if let suggested = group.suggestedDate {
+                            let calendar = Calendar.current
+                            selectedYear = calendar.component(.year, from: suggested)
+                            selectedMonth = calendar.component(.month, from: suggested)
+                            selectedDay = calendar.component(.day, from: suggested)
+                        }
+                    }
+                    .onChange(of: appState.currentDateConfirmationIndex) { _, _ in
+                        if let suggested = currentGroup?.suggestedDate {
+                            let calendar = Calendar.current
+                            selectedYear = calendar.component(.year, from: suggested)
+                            selectedMonth = calendar.component(.month, from: suggested)
+                            selectedDay = calendar.component(.day, from: suggested)
+                        }
+                    }
+                    .onChange(of: selectedMonth) { _, _ in
+                        // Adjust day if it exceeds the days in the new month
+                        if selectedDay > availableDays.count {
+                            selectedDay = availableDays.count
+                        }
+                    }
+                    .onChange(of: selectedYear) { _, _ in
+                        // Adjust day for leap year changes in February
+                        if selectedDay > availableDays.count {
+                            selectedDay = availableDays.count
+                        }
+                    }
+
+                    // Preview of selected date
+                    Text(selectedDate, style: .date)
+                        .font(.title3)
+                        .fontWeight(.medium)
+                        .padding(.top, 8)
 
                     if group.suggestedDate != nil {
                         Text("Date suggested from folder name")
